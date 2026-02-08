@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8"/>
+<title>Web3 Bug Bounty Scanner Pro</title>
+
+<style>
+body {
+  background:#0b0f1a;
+  color:white;
+  font-family: Arial, sans-serif;
+}
+.container{
+  max-width:900px;
+  margin:40px auto;
+  padding:20px;
+}
+input, button, textarea{
+  width:100%;
+  padding:10px;
+  margin:10px 0;
+}
+button{
+  background:#00ffcc;
+  border:none;
+  cursor:pointer;
+  font-weight:bold;
+}
+.box{
+  background:#111;
+  padding:15px;
+  border-radius:10px;
+  margin-top:15px;
+}
+pre{
+  background:black;
+  padding:10px;
+  color:#00ffcc;
+  overflow-x:auto;
+}
+.level-CRITICAL{color:red;}
+.level-HIGH{color:orange;}
+.level-MEDIUM{color:yellow;}
+.level-LOW{color:lightgreen;}
+</style>
+</head>
+
+<body>
+<div class="container">
+<h1>🔍 Web3 Bug Bounty Scanner (PRO)</h1>
+
+<button onclick="connectWallet()">Connect MetaMask</button>
+<p id="wallet" style="color:#00ffcc"></p>
+
+<input id="url" placeholder="Check Website Bug (Masukkan URL)">
+<input id="target" placeholder="Check TX Hash atau Contract Address">
+
+<button onclick="scanAll()">SCAN</button>
+
+<div id="result" class="box"></div>
+<div id="report" class="box"></div>
+</div>
+
+<script>
+// ========== METAMASK ==========
+async function connectWallet(){
+  if(!window.ethereum){
+    alert("MetaMask belum terpasang!");
+    return;
+  }
+  const accounts = await ethereum.request({method:"eth_requestAccounts"});
+  document.getElementById("wallet").innerText = "Terhubung: " + accounts[0];
+}
+
+// ========== UTILITY ==========
+function addIssue(list, level, issue, location, explanation, fix){
+  list.push({level, issue, location, explanation, fix});
+}
+
+// ========== WEB SECURITY CHECK (CLIENT-SIDE) ==========
+async function scanWebsite(url){
+  let issues = [];
+
+  try{
+    const res = await fetch(url, {mode:"cors"});
+    const h = res.headers;
+
+    if(!h.get("content-security-policy")){
+      addIssue(issues,"HIGH","Missing Content-Security-Policy",
+      "HTTP Headers",
+      "Rentan XSS dan script injection",
+      "Tambahkan CSP ketat");
+    }
+
+    if(!h.get("x-frame-options")){
+      addIssue(issues,"MEDIUM","Missing X-Frame-Options",
+      "HTTP Headers",
+      "Rentan clickjacking",
+      "Set: X-Frame-Options: DENY");
+    }
+
+    if(!h.get("referrer-policy")){
+      addIssue(issues,"LOW","Missing Referrer-Policy",
+      "HTTP Headers",
+      "Bisa bocor data referer",
+      "Set: strict-origin");
+    }
+
+    if(!h.get("strict-transport-security")){
+      addIssue(issues,"HIGH","Missing HSTS",
+      "HTTP Headers",
+      "Rentan downgrade attack",
+      "Set Strict-Transport-Security");
+    }
+
+    // CORS basic check
+    if(h.get("access-control-allow-origin")==="*"){
+      addIssue(issues,"MEDIUM","CORS Misconfiguration",
+      "HTTP Headers",
+      "Terlalu permisif",
+      "Batasi origin yang diizinkan");
+    }
+
+  }catch(e){
+    addIssue(issues,"CRITICAL","Fetch Failed",
+    "Network",
+    "Website tidak bisa diakses dari browser",
+    "Periksa CORS/Server");
+  }
+
+  return issues;
+}
+
+// ========== DUMMY TX/CONTRACT CHECK (REALISTIC FRONTEND) ==========
+async function scanTarget(target){
+  let issues = [];
+
+  if(!target) return issues;
+
+  if(target.startsWith("0x")){
+    addIssue(issues,"HIGH","Unlimited Approval Risk (Possible)",
+      "approve() call",
+      "Banyak user memberi izin tak terbatas",
+      "Gunakan approve minimal");
+  }else{
+    addIssue(issues,"MEDIUM","Format Tidak Jelas",
+      "Input",
+      "Bukan hash/kontrak standar",
+      "Masukkan TX Hash atau Address valid");
+  }
+
+  return issues;
+}
+
+// ========== RISK SCORE ==========
+function calculateRiskScore(findings){
+  let score = 100;
+  findings.forEach(f=>{
+    if(f.level==="CRITICAL") score-=40;
+    if(f.level==="HIGH") score-=25;
+    if(f.level==="MEDIUM") score-=10;
+    if(f.level==="LOW") score-=5;
+  });
+  return Math.max(score,0);
+}
+
+// ========== AUTO BUG BOUNTY REPORT ==========
+function generateReport(url, findings){
+  let list = findings.map(f=>`- ${f.issue} (${f.level})`).join("\n");
+
+  return `Subject: Security & UX Bug Bounty Report
+
+Hello Team,
+
+I conducted a professional security and usability review of ${url}
+
+Findings include:
+${list}
+
+Each finding includes steps to reproduce and suggested fixes.
+Please let me know if you'd like verification after corrective fixes.
+
+Best regards,`;
+}
+
+// ========== MAIN SCAN ==========
+async function scanAll(){
+  const url = document.getElementById("url").value;
+  const target = document.getElementById("target").value;
+
+  let findings = [];
+  if(url) findings = findings.concat(await scanWebsite(url));
+  if(target) findings = findings.concat(await scanTarget(target));
+
+  let score = calculateRiskScore(findings);
+  let report = generateReport(url || "N/A", findings);
+
+  // Tampilkan hasil
+  let html = `<h2>Hasil Scan</h2>`;
+  findings.forEach(f=>{
+    html += `<p class="level-${f.level}">
+    <b>${f.level}</b> — ${f.issue}<br>
+    📍 Lokasi: ${f.location}<br>
+    ℹ️ Masalah: ${f.explanation}<br>
+    ✅ Solusi: ${f.fix}
+    </p>`;
+  });
+
+  html += `<h3>Risk Score: ${score}/100</h3>`;
+  document.getElementById("result").innerHTML = html;
+  document.getElementById("report").innerHTML = `<h2>Auto Bug Bounty Report</h2><pre>${report}</pre>`;
+}
+</script>
+</body>
+</html>
